@@ -505,7 +505,7 @@ a, .social {
   .np-enter, .np.np-enter .np-art, .np.np-enter .np-body > * { animation: none; }
 }
 
-/* Clown: click to honk */
+/* Avatar: click to shake */
 .portrait-btn {
   display: block;
   margin: 0 auto 14px;

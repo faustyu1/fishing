@@ -222,7 +222,7 @@ function NpProgress({ np, syncedAt }: { np: SpotifyTrack; syncedAt: number }) {
   )
 }
 
-const CONFETTI = ['🤡', '🎈', '🎉', '⭐', '🎪']
+const CONFETTI = ['⛄', '❄️', '🎉', '⭐', '✨']
 const CONFETTI_COLORS = ['#a988ff', '#ff5c8a', '#ffd166', '#4cd4ff', '#7dffb0']
 
 function confetti(x: number, y: number) {
@@ -591,7 +591,7 @@ export default function App() {
         <button
           type="button"
           className="portrait-btn"
-          aria-label="клоун"
+          aria-label="снеговик"
           onClick={(e) => {
             const el = e.currentTarget
             // Restart the shake animation on every click.
@@ -613,13 +613,13 @@ export default function App() {
               onLoad={(e) => { if (e.currentTarget.naturalWidth <= 1) setAvatarOk(false) }}
             />
           ) : (
-            <span className="portrait portrait-fallback" role="img" aria-label="4">🤡</span>
+            <span className="portrait portrait-fallback" role="img" aria-label="4">⛄</span>
           )}
         </button>
 
         <div className="name">4</div>
 
-        <p className="intro">мерзкий клоун</p>
+        <p className="intro">CEO</p>
 
         <hr className="rule" />
 
