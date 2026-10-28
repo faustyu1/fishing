@@ -606,7 +606,7 @@ export default function App() {
           {avatarOk ? (
             <img
               className="portrait"
-              src="public/avatar-hardcode.jpg"
+              src="avatar-hardcode.jpg"
               alt="4"
               draggable={false}
               onError={() => setAvatarOk(false)}
