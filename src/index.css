@@ -4,10 +4,13 @@
 
 :root {
   --bg: #000000;
-  --ink: #f4f1fb;
-  --muted: #8f86a6;
-  --accent: #a988ff;
-  --line: rgba(255, 255, 255, 0.08);
+  /* Near-monochrome: black, greys, one soft white for emphasis. */
+  --ink: #e4e4e4;
+  --muted: #747474;
+  --accent: #b8b8b8;
+  --line: rgba(255, 255, 255, 0.06);
+  --surface: #0a0a0a;
+  --surface-2: #131313;
 }
 
 * {
@@ -63,6 +66,7 @@ a, .social {
   padding: 44px 38px 30px;
   text-align: center;
   background: #050505;
+  background: linear-gradient(180deg, #070707, #030303);
   border: 1px solid var(--line);
   box-shadow: 0 40px 100px -30px rgba(0, 0, 0, 0.95);
 
@@ -83,14 +87,14 @@ a, .social {
   object-fit: cover;
   border-radius: 20px;
   border: 1px solid rgba(255, 255, 255, 0.14);
-  box-shadow: 0 0 0 6px rgba(169, 136, 255, 0);
+  box-shadow: 0 0 0 6px rgba(255, 255, 255, 0);
   transition: transform 0.25s ease, box-shadow 0.25s ease;
   user-select: none;
 }
 
 .portrait:hover {
   transform: scale(1.05) rotate(-1.5deg);
-  box-shadow: 0 0 0 6px rgba(169, 136, 255, 0.16);
+  box-shadow: 0 0 0 6px rgba(255, 255, 255, 0.05);
 }
 
 .name {
@@ -169,7 +173,7 @@ a, .social {
   place-items: center;
   border-radius: 15px;
   color: var(--muted);
-  background: #0c0c0e;
+  background: var(--surface);
   border: 1px solid var(--line);
   text-decoration: none;
   overflow: hidden;
@@ -201,7 +205,7 @@ a, .social {
   content: "";
   position: absolute;
   inset: 0;
-  background: rgba(169, 136, 255, 0.16);
+  background: rgba(255, 255, 255, 0.04);
   opacity: 0;
   transition: opacity 0.18s ease;
 }
@@ -210,8 +214,8 @@ a, .social {
 .social:focus-visible {
   color: #fff;
   transform: translateY(-4px);
-  border-color: var(--accent);
-  box-shadow: 0 12px 26px -12px rgba(169, 136, 255, 0.7);
+  border-color: rgba(255, 255, 255, 0.22);
+  box-shadow: 0 12px 26px -12px rgba(255, 255, 255, 0.12);
   outline: none;
 }
 
@@ -248,7 +252,7 @@ a, .social {
 .ripple {
   position: absolute;
   border-radius: 50%;
-  background: rgba(169, 136, 255, 0.4);
+  background: rgba(255, 255, 255, 0.14);
   transform: translate(-50%, -50%) scale(0);
   animation: ripple 0.5s ease-out forwards;
   pointer-events: none;
@@ -288,7 +292,7 @@ a, .social {
   gap: 12px;
   padding: 10px;
   border-radius: 14px;
-  background: #0c0c0e;
+  background: var(--surface);
   border: 1px solid var(--line);
   text-decoration: none;
   color: var(--ink);
@@ -296,9 +300,9 @@ a, .social {
 }
 
 .np:hover {
-  border-color: var(--accent);
+  border-color: rgba(255, 255, 255, 0.22);
   transform: translateY(-2px);
-  box-shadow: 0 12px 26px -14px rgba(169, 136, 255, 0.7);
+  box-shadow: 0 12px 26px -14px rgba(255, 255, 255, 0.12);
 }
 
 .np-art {
@@ -306,7 +310,7 @@ a, .social {
   width: 46px;
   height: 46px;
   border-radius: 9px;
-  background: #16161a center / cover no-repeat;
+  background: var(--surface-2) center / cover no-repeat;
   border: 1px solid var(--line);
 }
 
@@ -434,7 +438,7 @@ a, .social {
   left: 50%;
   bottom: 26px;
   transform: translateX(-50%) translateY(24px);
-  background: #0c0c0e;
+  background: var(--surface);
   color: var(--ink);
   border: 1px solid var(--accent);
   border-radius: 10px;
@@ -493,7 +497,7 @@ a, .social {
   display: block;
   height: 0.7rem;
   border-radius: 4px;
-  background: linear-gradient(90deg, #16161a 0%, #222228 50%, #16161a 100%);
+  background: linear-gradient(90deg, #111 0%, #1c1c1c 50%, #111 100%);
   background-size: 200% 100%;
   animation: sk 1.2s ease-in-out infinite;
 }
@@ -598,30 +602,9 @@ a, .social {
 }
 
 .card.has-color {
-  border-color: rgba(var(--np-rgb), 0.22);
   box-shadow:
     0 40px 100px -30px rgba(0, 0, 0, 0.95),
-    0 0 90px -30px rgba(var(--np-rgb), 0.45);
-}
-
-.card.has-color .np {
-  background: linear-gradient(120deg, rgba(var(--np-rgb), 0.14), #0c0c0e 70%);
-  border-color: rgba(var(--np-rgb), 0.3);
-}
-
-.card.has-color .np:hover {
-  border-color: rgba(var(--np-rgb), 0.8);
-  box-shadow: 0 12px 26px -14px rgba(var(--np-rgb), 0.8);
-}
-
-.card.has-color .np-label,
-.card.has-color .r-dot {
-  color: rgb(var(--np-rgb));
-}
-
-.card.has-color .np-eq i,
-.card.has-color .np-bar > span {
-  background: rgb(var(--np-rgb));
+    0 0 110px -50px rgba(var(--np-rgb), 0.35);
 }
 
 /* Track progress */

@@ -362,7 +362,7 @@ const SEASON_CONFETTI: Record<Season, string[]> = {
 }
 
 const CONFETTI = [...SEASON_CONFETTI[SEASON], '🎉', '⭐', '✨']
-const CONFETTI_COLORS = ['#a988ff', '#ff5c8a', '#ffd166', '#4cd4ff', '#7dffb0']
+const CONFETTI_COLORS = ['#ffffff', '#d4d4d4', '#9a9a9a', '#5e5e5e']
 
 function confetti(x: number, y: number) {
   if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return
