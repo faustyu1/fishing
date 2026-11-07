@@ -32,11 +32,11 @@ body {
   padding: 24px;
   overflow-x: hidden;
   position: relative;
-  cursor: url("/cursor.png") 2 2, auto;
+  cursor: url("/cursor.svg") 1 1, auto;
 }
 
 a, .social {
-  cursor: url("/paw.png") 8 6, pointer;
+  cursor: url("/pointer.svg") 11 1, pointer;
 }
 
 /* The card sits inside #root > div; make those span the column so the card's 100% means the screen. */
@@ -99,6 +99,15 @@ a, .social {
   margin-bottom: 8px;
   color: var(--ink);
   letter-spacing: -0.01em;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
 }
 
 
@@ -172,10 +181,10 @@ a, .social {
               border-color 0.18s ease, box-shadow 0.18s ease;
 }
 
-.social:nth-child(1) { animation-delay: 0.55s; }
-.social:nth-child(2) { animation-delay: 0.65s; }
-.social:nth-child(3) { animation-delay: 0.75s; }
-.social:nth-child(4) { animation-delay: 0.85s; }
+.social:nth-child(1) { animation-delay: 0.2s; }
+.social:nth-child(2) { animation-delay: 0.28s; }
+.social:nth-child(3) { animation-delay: 0.36s; }
+.social:nth-child(4) { animation-delay: 0.44s; }
 
 @keyframes pop {
   to { opacity: 1; transform: none; }
@@ -252,6 +261,25 @@ a, .social {
 
 .spotify {
   text-align: left;
+  /* Unfolds after the social buttons, so the card grows instead of sitting half empty. */
+  display: grid;
+  grid-template-rows: 0fr;
+  opacity: 0;
+  animation: unfold 0.8s cubic-bezier(0.2, 0.8, 0.2, 1) 0.45s forwards;
+}
+
+.spotify-inner {
+  min-height: 0;
+  overflow: hidden;
+}
+
+.spotify.grown .spotify-inner {
+  overflow: visible;
+}
+
+@keyframes unfold {
+  60% { opacity: 0.4; }
+  to  { grid-template-rows: 1fr; opacity: 1; }
 }
 
 .np {
@@ -431,9 +459,17 @@ a, .social {
     transition: none !important;
   }
 
-  .card, .intro, .social, .foot {
+  .card, .intro, .social, .spotify, .waka, .foot {
     opacity: 1;
     transform: none;
+  }
+
+  .spotify {
+    grid-template-rows: 1fr;
+  }
+
+  .spotify-inner {
+    overflow: visible;
   }
 }
 
@@ -649,6 +685,26 @@ a, .social {
 .np-state {
   flex: 0 0 auto;
   white-space: nowrap;
+}
+
+/* WakaTime: time coded today */
+.waka {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 14px 2px 0;
+  font-size: 0.76rem;
+  color: var(--muted);
+  text-align: left;
+  opacity: 0;
+  animation: fadeUp 0.6s ease 0.8s forwards;
+}
+
+.waka svg {
+  flex: 0 0 auto;
+  width: 14px;
+  height: 14px;
+  color: var(--accent);
 }
 
 /* Phones */

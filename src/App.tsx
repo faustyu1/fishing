@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useRef } from 'react'
+import { useEffect, useState, useCallback, useRef, createContext, useContext } from 'react'
 
 interface SpotifyTrack {
   id?: string
@@ -42,7 +42,7 @@ function DeviceTag({ device }: { device: { name: string; type: string } }) {
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
         {icon}
       </svg>
-      {device.name}
+      <Scramble text={device.name} />
     </span>
   )
 }
@@ -57,21 +57,57 @@ interface SpotifyData {
 
 const PAUSED_FOR_MS = 10 * 60 * 1000
 
+// UI language follows the browser: Russian for ru-*, English for everything else.
+// ?lang=ru or ?lang=en overrides it for previewing.
+function detectLang(): 'ru' | 'en' {
+  if (typeof window === 'undefined') return 'en'
+  const forced = new URLSearchParams(window.location.search).get('lang')
+  if (forced === 'ru' || forced === 'en') return forced
+  return /^ru\b/i.test(navigator.language || '') ? 'ru' : 'en'
+}
+const LANG = detectLang()
+if (typeof document !== 'undefined') document.documentElement.lang = LANG
+
+const STRINGS = {
+  ru: {
+    min: 'м', hour: 'ч', day: 'д', ago: 'назад',
+    nowPlaying: 'сейчас играет', paused: 'на паузе', lastPlayed: 'играл недавно', offline: 'офлайн',
+    avgPerDay: (d: string) => `в среднем ${d} в день`, total: (d: string) => `всего ${d}`,
+    clockTitle: 'моё время (Самара, UTC+4)', city: 'Самара', views: 'просмотры',
+    effectOn: 'включить эффект текста', effectOff: 'выключить эффект текста',
+    listenOn: 'слушать вместе', listenOff: 'выключить музыку',
+    avatar: 'снеговик', contacts: 'контакты', copied: 'скопировано',
+    tagline: 'могилка и александр фойд',
+  },
+  en: {
+    min: 'm', hour: 'h', day: 'd', ago: 'ago',
+    nowPlaying: 'now playing', paused: 'paused', lastPlayed: 'last played', offline: 'offline',
+    avgPerDay: (d: string) => `${d} a day on average`, total: (d: string) => `${d} total`,
+    clockTitle: 'my time (Samara, UTC+4)', city: 'Samara', views: 'views',
+    effectOn: 'turn text effect on', effectOff: 'turn text effect off',
+    listenOn: 'listen along', listenOff: 'stop music',
+    avatar: 'snowman', contacts: 'contacts', copied: 'copied',
+    tagline: 'mogilka and alexander foyd',
+  },
+}[LANG]
+
 function ago(ms: number) {
   const m = Math.floor(ms / 60000)
-  if (m < 60) return `${Math.max(m, 1)}m ago`
+  if (m < 60) return `${Math.max(m, 1)}${STRINGS.min} ${STRINGS.ago}`
   const h = Math.floor(m / 60)
-  if (h < 24) return `${h}h ago`
-  return `${Math.floor(h / 24)}d ago`
+  if (h < 24) return `${h}${STRINGS.hour} ${STRINGS.ago}`
+  return `${Math.floor(h / 24)}${STRINGS.day} ${STRINGS.ago}`
 }
 
 // "now playing" / "paused" (stopped a moment ago) / "offline · 3h ago"
 function playState(np: SpotifyTrack, lastActiveAt: number | null, now: number) {
-  if (np.isPlaying) return { label: 'now playing', offline: false }
-  if (!lastActiveAt) return { label: 'last played', offline: false }
+  if (np.isPlaying) return { label: STRINGS.nowPlaying, offline: false }
+  if (!lastActiveAt) return { label: STRINGS.lastPlayed, offline: false }
   const idle = now - lastActiveAt
-  if (idle < PAUSED_FOR_MS) return { label: 'paused', offline: false }
-  return { label: `offline · ${ago(idle)}`, offline: true }
+  // No progress means Spotify reported no player at all (closed app, private session),
+  // so the track comes from history and "paused" would be a guess.
+  if (idle < PAUSED_FOR_MS) return { label: np.progressMs == null ? `${STRINGS.lastPlayed} · ${ago(idle)}` : STRINGS.paused, offline: false }
+  return { label: `${STRINGS.offline} · ${ago(idle)}`, offline: true }
 }
 
 // Spotify iFrame API: plays the same track as "now playing" in a compact embed.
@@ -141,6 +177,71 @@ function ListenAlong({ uri, on }: { uri?: string; on: boolean }) {
   }, [on])
 
   return <div ref={host} className={`listen-along ${on ? 'on' : ''}`} />
+}
+
+const pick = (set: string) => set[Math.floor(Math.random() * set.length)]
+
+// Text that assembles itself out of random characters, flickers now and then
+// and re-scrambles on hover. Only changed characters scramble, so a ticking clock stays calm.
+const POOL_LAT = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789'
+const POOL_CYR = 'АБВГДЕЖЗИКЛМНОПРСТУФХЦЧШЩЭЮЯабвгдежзиклмнопрстуфхцчшщэюя'
+const POOL_NUM = '0123456789'
+const REDUCED = typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches
+
+// Calm mode: plain text instead of scrambling. Toggled from the footer, remembered per browser.
+const CalmContext = createContext(false)
+
+function initialCalm() {
+  try { if (localStorage.getItem('calm') === '1') return true } catch {}
+  return REDUCED
+}
+
+function noiseFor(c: string) {
+  if (/\s/.test(c) || /[^\p{L}\p{N}]/u.test(c)) return c
+  if (/\p{N}/u.test(c)) return pick(POOL_NUM)
+  return pick(/[а-яё]/i.test(c) ? POOL_CYR : POOL_LAT)
+}
+
+function Scramble({ text, className }: { text: string; className?: string }) {
+  const el = useRef<HTMLSpanElement>(null)
+  // Per character: time until which it shows noise.
+  const until = useRef<number[]>([])
+  const prev = useRef('')
+  const calm = useContext(CalmContext)
+
+  const scramble = useCallback((all: boolean) => {
+    const now = performance.now()
+    const old = prev.current
+    until.current = Array.from(text, (c, i) =>
+      all || old[i] !== c ? now + 120 + i * 22 + Math.random() * 260 : (until.current[i] ?? 0),
+    )
+    prev.current = text
+  }, [text])
+
+  useEffect(() => {
+    if (calm) { until.current = []; prev.current = text; if (el.current) el.current.textContent = text; return }
+    scramble(false)
+    const chars = Array.from(text)
+    const iv = setInterval(() => {
+      const now = performance.now()
+      // Rare idle flicker of a single character.
+      if (Math.random() < 0.04 && chars.length) {
+        const i = Math.floor(Math.random() * chars.length)
+        until.current[i] = Math.max(until.current[i] ?? 0, now + 90)
+      }
+      let out = ''
+      for (let i = 0; i < chars.length; i++) out += now < (until.current[i] ?? 0) ? noiseFor(chars[i]) : chars[i]
+      if (el.current && el.current.textContent !== out) el.current.textContent = out
+    }, 45)
+    return () => clearInterval(iv)
+  }, [text, scramble, calm])
+
+  return (
+    <span className={className} onPointerEnter={calm ? undefined : () => scramble(true)}>
+      <span className="sr-only">{text}</span>
+      <span ref={el} aria-hidden="true" />
+    </span>
+  )
 }
 
 function samaraTime() {
@@ -215,14 +316,52 @@ function NpProgress({ np, syncedAt }: { np: SpotifyTrack; syncedAt: number }) {
 
   return (
     <span className="np-progress" aria-hidden="true">
-      <span className="np-time">{fmt(pos)}</span>
+      <Scramble className="np-time" text={fmt(pos)} />
       <span className="np-bar"><span style={{ width: `${(pos / np.durationMs) * 100}%` }} /></span>
-      <span className="np-time">{fmt(np.durationMs)}</span>
+      <Scramble className="np-time" text={fmt(np.durationMs)} />
     </span>
   )
 }
 
-const CONFETTI = ['⛄', '❄️', '🎉', '⭐', '✨']
+type Season = 'winter' | 'spring' | 'summer' | 'autumn'
+
+// Season by the month in Samara; ?season=summer overrides it for previewing.
+function currentSeason(): Season {
+  const forced = new URLSearchParams(window.location.search).get('season')
+  if (forced === 'winter' || forced === 'spring' || forced === 'summer' || forced === 'autumn') return forced
+  const month = Number(new Date().toLocaleString('en-US', { timeZone: 'Europe/Samara', month: 'numeric' }))
+  if (month === 12 || month <= 2) return 'winter'
+  if (month <= 5) return 'spring'
+  if (month <= 8) return 'summer'
+  return 'autumn'
+}
+
+const SEASON = currentSeason()
+
+// Background particles per season. size/fall are [base, extra at full depth]; area is px² per particle.
+const SEASON_LOOK: Record<Season, {
+  kind: 'snow' | 'petal' | 'firefly' | 'leaf'
+  colors: string[]
+  size: [number, number]
+  fall: [number, number]
+  sway: number
+  area: number
+  max: number
+}> = {
+  winter: { kind: 'snow', colors: ['#ffffff'], size: [0.7, 2.6], fall: [18, 70], sway: 12, area: 7000, max: 260 },
+  spring: { kind: 'petal', colors: ['#ffc4d8', '#ffdbe7', '#ffffff', '#f7a8c4'], size: [2.5, 4], fall: [14, 30], sway: 30, area: 13000, max: 110 },
+  summer: { kind: 'firefly', colors: ['#e9ff8a', '#fff1a1', '#c8ff7a'], size: [0.8, 1.4], fall: [0, 0], sway: 14, area: 18000, max: 70 },
+  autumn: { kind: 'leaf', colors: ['#e8833a', '#d9542b', '#f2b33d', '#b8452a', '#c9772c'], size: [4, 5], fall: [20, 40], sway: 40, area: 15000, max: 80 },
+}
+
+const SEASON_CONFETTI: Record<Season, string[]> = {
+  winter: ['⛄', '❄️'],
+  spring: ['🌸', '🌷'],
+  summer: ['☀️', '🌻'],
+  autumn: ['🍂', '🍁'],
+}
+
+const CONFETTI = [...SEASON_CONFETTI[SEASON], '🎉', '⭐', '✨']
 const CONFETTI_COLORS = ['#a988ff', '#ff5c8a', '#ffd166', '#4cd4ff', '#7dffb0']
 
 function confetti(x: number, y: number) {
@@ -275,12 +414,51 @@ async function solvePow(challenge: string, bits: number) {
 
 const MIN_DWELL_MS = 3200
 
+// Coding stats from WakaTime; null until loaded or when the API is unavailable.
+function useWakatime() {
+  const [data, setData] = useState<{ dailyAverageSeconds: number | null; allTimeSeconds: number | null } | null>(null)
+  useEffect(() => {
+    let cancelled = false
+    const load = () =>
+      fetch('/api/wakatime', { cache: 'no-store' })
+        .then((r) => (r.ok ? r.json() : null))
+        .then((d) => { if (!cancelled && d) setData(d) })
+        .catch(() => {})
+    load()
+    const iv = setInterval(() => { if (!document.hidden) load() }, 5 * 60 * 1000)
+    return () => { cancelled = true; clearInterval(iv) }
+  }, [])
+  return data
+}
+
+function duration(seconds: number) {
+  const m = Math.floor(seconds / 60)
+  const h = Math.floor(m / 60)
+  const { hour, min } = STRINGS
+  if (h >= 100) return `${h}${hour}`
+  return h ? `${h}${hour} ${m % 60}${min}` : `${m}${min}`
+}
+
+// "в среднем 2ч 5м в день · всего 725ч" / "2h 5m a day on average · 725h total"
+function codingLine(average: number | null, allTime: number | null) {
+  const parts: string[] = []
+  if (average) parts.push(STRINGS.avgPerDay(duration(average)))
+  if (allTime) parts.push(STRINGS.total(duration(allTime)))
+  return parts.join(' · ')
+}
+
 function useViews() {
   const [views, setViews] = useState<number | null>(null)
   useEffect(() => {
     let cancelled = false
     let counted = false
-    try { counted = sessionStorage.getItem('viewed') === '1' } catch {}
+    // Each browser counts once ever, not once per tab session: phones change IP often,
+    // so the server's once-per-IP-per-day rule alone counted the same people again and again.
+    // Opening the site once with ?me marks this browser as the owner's, which never counts.
+    try {
+      if (new URLSearchParams(location.search).has('me')) localStorage.setItem('me', '1')
+      counted = localStorage.getItem('viewed') === '1' || localStorage.getItem('me') === '1'
+    } catch {}
 
     async function run() {
       const res = await fetch('/api/views', { cache: 'no-store' })
@@ -307,7 +485,7 @@ function useViews() {
       const data = await post.json()
       if (cancelled) return
       setViews(data.count)
-      try { sessionStorage.setItem('viewed', '1') } catch {}
+      try { localStorage.setItem('viewed', '1') } catch {}
     }
 
     run().catch(() => {})
@@ -319,6 +497,8 @@ function useViews() {
 // Start the first request at module load, before React mounts.
 const firstSpotify = fetchSpotify()
 firstSpotify.catch(() => {})
+
+const AVATARS = ['https://t.me/i/userpic/320/faustyu.jpg', '/avatar-hardcode.jpg']
 
 interface Social {
   key: string
@@ -336,7 +516,7 @@ const SOCIALS: Social[] = [
     label: 'Telegram — @faustyu',
     tip: '@faustyu',
     svg: (
-      <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+      <svg viewBox="-1.18 -1.51 25.5 25.5" fill="currentColor" aria-hidden="true">
         <path d="M21.9 4.3 18.7 19.4c-.24 1.06-.87 1.32-1.76.82l-4.86-3.58-2.35 2.26c-.26.26-.48.48-.98.48l.35-4.95L18.1 5.9c.4-.36-.08-.56-.62-.2L6.55 12.4l-4.8-1.5c-1.04-.32-1.06-1.04.22-1.54l18.8-7.24c.86-.32 1.62.2 1.33 2.18z" />
       </svg>
     ),
@@ -358,7 +538,7 @@ const SOCIALS: Social[] = [
     label: 'X — @dshashimov',
     tip: '@dshashimov',
     svg: (
-      <svg viewBox="0 0 300 300.251" fill="currentColor" aria-hidden="true">
+      <svg viewBox="-30 -30 360 360.251" fill="currentColor" aria-hidden="true">
         <path d="M178.57 127.15 290.27 0h-26.46l-97.03 110.38L89.34 0H0l117.13 166.93L0 300.25h26.46l102.4-116.59 81.8 116.59h89.34M36.01 19.54H76.66l187.13 262.13h-40.66"/>
       </svg>
     ),
@@ -370,8 +550,18 @@ export default function App() {
   const [clock, setClock] = useState('--:--:--')
   const [now, setNow] = useState(Date.now())
   const [listening, setListening] = useState(false)
-  const [avatarOk, setAvatarOk] = useState(true)
+  const [calm, setCalm] = useState(initialCalm)
+  // The music block unfolds once on load; after that it may overflow (hover lift, shadows).
+  const [grown, setGrown] = useState(false)
+  const toggleCalm = () => setCalm((v) => {
+    try { localStorage.setItem('calm', v ? '0' : '1') } catch {}
+    return !v
+  })
+  // Telegram userpic first; the saved copy if Telegram fails, then the snowman.
+  const [avatarIdx, setAvatarIdx] = useState(0)
+  const nextAvatar = () => setAvatarIdx((i) => i + 1)
   const views = useViews()
+  const waka = useWakatime()
 
   const [spotify, setSpotify] = useState<{
     np: SpotifyTrack | null
@@ -406,92 +596,141 @@ export default function App() {
     const ctx = canvas.getContext('2d', { alpha: true }) as CanvasRenderingContext2D
     if (!ctx) return
 
-    let w = 0, h = 0
+    let w = 0, h = 0, dpr = 1
+    const look = SEASON_LOOK[SEASON]
+    // z is depth: near particles are bigger, faster, brighter.
+    type Bit = {
+      x: number; y: number; z: number; r: number; vy: number
+      phase: number; sway: number; rot: number; spin: number; color: string
+    }
     type Star = { x: number; y: number; r: number; a: number; s: number }
-    let pts: Star[] = []
-    type Meteor = { x: number; y: number; vx: number; vy: number; len: number; life: number; max: number; hue: string }
-    let meteors: Meteor[] = []
-    let nextMeteor = 0
+    let bits: Bit[] = []
+    let stars: Star[] = []
+    let wind = 0, windTarget = 0
     let raf = 0
+    let last = performance.now()
 
-    function spawnMeteor(now: number) {
-      // Diagonal fall from the upper area, down-left, tinted like the site accent.
-      const speed = 9 + Math.random() * 7
-      const angle = (Math.PI / 180) * (125 + Math.random() * 20)
-      meteors.push({
-        x: w * (0.25 + Math.random() * 0.85),
-        y: -20 + Math.random() * h * 0.35,
-        vx: Math.cos(angle) * speed,
-        vy: Math.sin(angle) * speed,
-        len: 90 + Math.random() * 110,
-        life: 0,
-        max: 55 + Math.random() * 35,
-        hue: Math.random() < 0.6 ? '169,136,255' : '244,241,251',
-      })
-      nextMeteor = now + 1400 + Math.random() * 3200
+    function makeBit(anywhere: boolean): Bit {
+      const z = Math.random() ** 1.6
+      return {
+        x: Math.random() * w,
+        y: anywhere || look.kind === 'firefly' ? Math.random() * h : -20 - Math.random() * 40,
+        z,
+        r: look.size[0] + z * look.size[1],
+        vy: look.fall[0] + z * look.fall[1],
+        phase: Math.random() * Math.PI * 2,
+        sway: look.sway * (0.5 + Math.random()),
+        rot: Math.random() * Math.PI * 2,
+        spin: (Math.random() - 0.5) * 3,
+        color: look.colors[Math.floor(Math.random() * look.colors.length)],
+      }
     }
 
     function init() {
-      w = canvas.width = window.innerWidth
-      h = canvas.height = window.innerHeight
+      dpr = Math.min(window.devicePixelRatio || 1, 2)
+      w = window.innerWidth
+      h = window.innerHeight
+      canvas.width = w * dpr
+      canvas.height = h * dpr
+      canvas.style.width = `${w}px`
+      canvas.style.height = `${h}px`
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
 
-      const n = Math.min(140, Math.floor((w * h) / 12000))
-      pts = Array.from({ length: n }, () => ({
+      const n = Math.min(look.max, Math.floor((w * h) / look.area))
+      bits = Array.from({ length: n }, () => makeBit(true))
+      // A few faint stars in the upper sky.
+      stars = Array.from({ length: Math.min(70, Math.floor((w * h) / 26000)) }, () => ({
         x: Math.random() * w,
-        y: Math.random() * h,
-        r: Math.random() * 1.3 + 0.3,
-        a: Math.random(),
-        s: Math.random() * 0.02 + 0.004,
+        y: Math.random() * h * 0.6,
+        r: Math.random() * 0.9 + 0.3,
+        a: Math.random() * 6,
+        s: Math.random() * 0.8 + 0.2,
       }))
     }
 
-    function loop(now = 0) {
+    function draw(b: Bit) {
+      ctx.fillStyle = b.color
+      if (look.kind === 'snow') {
+        ctx.globalAlpha = 0.25 + b.z * 0.65
+        ctx.beginPath()
+        ctx.arc(b.x, b.y, b.r, 0, 7)
+        ctx.fill()
+        return
+      }
+      if (look.kind === 'firefly') {
+        // Slow pulse; the glow is a soft halo plus a bright core.
+        const glow = Math.max(0, Math.sin(b.rot))
+        ctx.globalAlpha = 0.15 + glow * 0.35
+        ctx.beginPath()
+        ctx.arc(b.x, b.y, b.r * 4, 0, 7)
+        ctx.fill()
+        ctx.globalAlpha = 0.3 + glow * 0.7
+        ctx.beginPath()
+        ctx.arc(b.x, b.y, b.r, 0, 7)
+        ctx.fill()
+        return
+      }
+      // Leaf or petal: a tumbling ellipse; scaleX by cos(rot) fakes a 3D flip.
+      ctx.globalAlpha = 0.45 + b.z * 0.5
+      ctx.save()
+      ctx.translate(b.x, b.y)
+      ctx.rotate(b.rot * 0.6)
+      ctx.scale(Math.max(Math.abs(Math.cos(b.rot)), 0.2), 1)
+      ctx.beginPath()
+      if (look.kind === 'leaf') {
+        ctx.moveTo(0, -b.r)
+        ctx.quadraticCurveTo(b.r * 0.9, 0, 0, b.r)
+        ctx.quadraticCurveTo(-b.r * 0.9, 0, 0, -b.r)
+      } else {
+        ctx.ellipse(0, 0, b.r * 0.6, b.r, 0, 0, 7)
+      }
+      ctx.fill()
+      ctx.restore()
+    }
+
+    function loop(now: number) {
+      const dt = Math.min((now - last) / 1000, 0.05)
+      last = now
+      wind += (windTarget - wind) * 0.02
       ctx.clearRect(0, 0, w, h)
-      for (const p of pts) {
-        p.a += p.s
-        const alpha = 0.35 + Math.abs(Math.sin(p.a)) * 0.55
+
+      ctx.fillStyle = '#dbe8ff'
+      for (const s of stars) {
+        s.a += s.s * dt
+        ctx.globalAlpha = 0.15 + Math.abs(Math.sin(s.a)) * 0.35 * (1 - s.y / (h * 0.6))
         ctx.beginPath()
-        ctx.arc(p.x, p.y, p.r, 0, 7)
-        ctx.fillStyle = `rgba(255,255,255,${alpha})`
+        ctx.arc(s.x, s.y, s.r, 0, 7)
         ctx.fill()
       }
 
-      if (now >= nextMeteor && meteors.length < 3) spawnMeteor(now)
-
-      meteors = meteors.filter((m) => m.life < m.max && m.y < h + 200)
-      for (const m of meteors) {
-        m.life++
-        m.x += m.vx
-        m.y += m.vy
-        const fade = Math.sin((m.life / m.max) * Math.PI)
-        const speed = Math.hypot(m.vx, m.vy)
-        const tx = m.x - (m.vx / speed) * m.len
-        const ty = m.y - (m.vy / speed) * m.len
-        const grad = ctx.createLinearGradient(m.x, m.y, tx, ty)
-        grad.addColorStop(0, `rgba(${m.hue},${0.95 * fade})`)
-        grad.addColorStop(1, `rgba(${m.hue},0)`)
-        ctx.strokeStyle = grad
-        ctx.lineWidth = 1.6
-        ctx.lineCap = 'round'
-        ctx.beginPath()
-        ctx.moveTo(m.x, m.y)
-        ctx.lineTo(tx, ty)
-        ctx.stroke()
-
-        ctx.beginPath()
-        ctx.arc(m.x, m.y, 1.8, 0, 7)
-        ctx.fillStyle = `rgba(255,255,255,${fade})`
-        ctx.shadowColor = `rgba(${m.hue},1)`
-        ctx.shadowBlur = 10
-        ctx.fill()
-        ctx.shadowBlur = 0
+      for (const b of bits) {
+        b.phase += dt * (0.6 + b.z)
+        b.rot += b.spin * dt
+        if (look.kind === 'firefly') {
+          // Wander in loops instead of falling.
+          b.x += (Math.cos(b.phase * 0.7) * b.sway + wind * 10) * dt
+          b.y += Math.sin(b.phase) * b.sway * dt - 4 * dt
+          if (b.y < -20) b.y = h + 20
+          else if (b.y > h + 20) b.y = -20
+        } else {
+          b.y += b.vy * dt
+          b.x += (Math.sin(b.phase) * b.sway * 0.03 + wind * (0.4 + b.z)) * dt * 60
+          if (b.y > h + 20) Object.assign(b, makeBit(false))
+        }
+        if (b.x > w + 20) b.x = -20
+        else if (b.x < -20) b.x = w + 20
+        draw(b)
       }
+      ctx.globalAlpha = 1
 
       raf = requestAnimationFrame(loop)
     }
 
+    // Particles drift gently towards the side the cursor is on.
+    const onMove = (e: PointerEvent) => { windTarget = ((e.clientX / w) - 0.5) * 1.2 }
+    window.addEventListener('pointermove', onMove)
+
     init()
-    nextMeteor = performance.now() + 600
     raf = requestAnimationFrame(loop)
 
     const onResize = () => init()
@@ -499,6 +738,7 @@ export default function App() {
     return () => {
       cancelAnimationFrame(raf)
       window.removeEventListener('resize', onResize)
+      window.removeEventListener('pointermove', onMove)
     }
   }, [])
 
@@ -515,7 +755,7 @@ export default function App() {
 
     if (social.copy && navigator.clipboard) {
       navigator.clipboard.writeText(social.copy).then(() => {
-        showToast('copied  ' + social.copy)
+        showToast(`${STRINGS.copied}  ${social.copy}`)
       }).catch(() => {})
     }
   }
@@ -580,6 +820,7 @@ export default function App() {
   const state = spotify.np ? playState(spotify.np, spotify.lastActiveAt, now) : null
 
   return (
+    <CalmContext.Provider value={calm}>
     <div>
       <canvas id="stars" aria-hidden="true" />
 
@@ -591,7 +832,7 @@ export default function App() {
         <button
           type="button"
           className="portrait-btn"
-          aria-label="снеговик"
+          aria-label={STRINGS.avatar}
           onClick={(e) => {
             const el = e.currentTarget
             // Restart the shake animation on every click.
@@ -603,27 +844,28 @@ export default function App() {
           }}
           onAnimationEnd={(e) => e.currentTarget.classList.remove('is-shaking')}
         >
-          {avatarOk ? (
+          {avatarIdx < AVATARS.length ? (
             <img
+              key={AVATARS[avatarIdx]}
               className="portrait"
-              src="avatar-hardcode.jpg"
-              alt="4"
+              src={AVATARS[avatarIdx]}
+              alt="Daniil"
               draggable={false}
-              onError={() => setAvatarOk(false)}
-              onLoad={(e) => { if (e.currentTarget.naturalWidth <= 1) setAvatarOk(false) }}
+              onError={nextAvatar}
+              onLoad={(e) => { if (e.currentTarget.naturalWidth <= 1) nextAvatar() }}
             />
           ) : (
-            <span className="portrait portrait-fallback" role="img" aria-label="4">⛄</span>
+            <span className="portrait portrait-fallback" role="img" aria-label="Daniil">⛄</span>
           )}
         </button>
 
-        <div className="name">4</div>
+        <div className="name"><Scramble text="Daniil" /></div>
 
-        <p className="intro">CEO</p>
+        <p className="intro"><Scramble text={STRINGS.tagline} /></p>
 
         <hr className="rule" />
 
-        <nav className="socials" aria-label="contacts">
+        <nav className="socials" aria-label={STRINGS.contacts}>
           {SOCIALS.map((social) => (
             <a
               key={social.key}
@@ -641,9 +883,11 @@ export default function App() {
         </nav>
 
         <section
-          className={`spotify ${spotify.np?.isPlaying ? 'is-playing' : ''} ${state?.offline ? 'is-offline' : ''}`}
+          className={`spotify ${grown ? 'grown' : ''} ${spotify.np?.isPlaying ? 'is-playing' : ''} ${state?.offline ? 'is-offline' : ''}`}
           aria-label="Spotify"
+          onAnimationEnd={(e) => { if (e.target === e.currentTarget) setGrown(true) }}
         >
+          <div className="spotify-inner">
             <hr className="rule" />
             {spotify.np ? (
               <a key={spotify.np.id || spotify.np.title} className="np np-enter" href={spotify.np.url || '#'} target="_blank" rel="noopener noreferrer">
@@ -654,11 +898,11 @@ export default function App() {
                 />
                 <span className="np-body">
                   <span className="np-label">
-                    <span className="np-state">{state?.label}</span>
+                    <Scramble className="np-state" text={state?.label ?? ''} />
                     {spotify.np.isPlaying && spotify.np.device && <DeviceTag device={spotify.np.device} />}
                   </span>
-                  <span className="np-title">{spotify.np.title}</span>
-                  <span className="np-artist">{spotify.np.artist}</span>
+                  <Scramble className="np-title" text={spotify.np.title} />
+                  <Scramble className="np-artist" text={spotify.np.artist} />
                   {!state?.offline && <NpProgress np={spotify.np} syncedAt={spotify.syncedAt} />}
                 </span>
                 <span className="np-eq" aria-hidden="true"><i /><i /><i /><i /></span>
@@ -667,7 +911,7 @@ export default function App() {
               <div className="np is-loading" aria-busy="true">
                 <span className="np-art" aria-hidden="true" />
                 <span className="np-body">
-                  <span className="np-label">spotify</span>
+                  <span className="np-label"><Scramble text="spotify" /></span>
                   <span className="sk sk-title" />
                   <span className="sk sk-artist" />
                 </span>
@@ -686,34 +930,61 @@ export default function App() {
                     {t.url ? (
                       <a href={t.url} target="_blank" rel="noopener noreferrer">
                         <span className="r-dot">♪</span>
-                        <span className="r-text">{t.title} <span className="r-artist">— {t.artist}</span></span>
+                        <span className="r-text"><Scramble text={t.title} /> <Scramble className="r-artist" text={`— ${t.artist}`} /></span>
                       </a>
                     ) : (
                       <span>
                         <span className="r-dot">♪</span>
-                        <span className="r-text">{t.title} <span className="r-artist">— {t.artist}</span></span>
+                        <span className="r-text"><Scramble text={t.title} /> <Scramble className="r-artist" text={`— ${t.artist}`} /></span>
                       </span>
                     )}
                   </li>
                 ))}
               </ul>
             )}
+          </div>
           </section>
 
+        {waka && (waka.dailyAverageSeconds || waka.allTimeSeconds) ? (
+          <p className="waka" title="WakaTime">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="m8 6-6 6 6 6M16 6l6 6-6 6" />
+            </svg>
+            <Scramble text={codingLine(waka.dailyAverageSeconds, waka.allTimeSeconds)} />
+          </p>
+        ) : null}
+
         <footer className="foot">
-          <span className="clock" title="моё время (Самара, UTC+4)">
-            {clock} <span className="clock-tz">Samara</span>
+          <span className="clock" title={STRINGS.clockTitle}>
+            <Scramble text={clock} /> <Scramble className="clock-tz" text={STRINGS.city} />
           </span>
           <span className="foot-right">
-            {views != null && <span className="views" title="просмотры">👁 {views.toLocaleString('ru-RU')}</span>}
+            {views != null && <span className="views" title={STRINGS.views}>👁 <Scramble text={views.toLocaleString(LANG === 'ru' ? 'ru-RU' : 'en-US')} /></span>}
+            <button
+              type="button"
+              className={`sound-toggle ${calm ? 'on' : ''}`}
+              onClick={toggleCalm}
+              aria-pressed={calm}
+              aria-label={calm ? STRINGS.effectOn : STRINGS.effectOff}
+              title={calm ? STRINGS.effectOn : STRINGS.effectOff}
+            >
+              {/* Accessibility icon from Lucide (ISC license): person in a wheelchair. */}
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <circle cx="16" cy="4" r="1" />
+                <path d="m18 19 1-7-6 1" />
+                <path d="m5 8 3-3 5.5 3-2.36 3.5" />
+                <path d="M4.24 14.5a5 5 0 0 0 6.88 6" />
+                <path d="M13.76 17.5a5 5 0 0 0-6.88-6" />
+              </svg>
+            </button>
             <button
               type="button"
               className={`sound-toggle ${listening ? 'on' : ''}`}
               onClick={() => setListening((v) => !v)}
               disabled={!spotify.np?.uri}
               aria-pressed={listening}
-              aria-label={listening ? 'выключить музыку' : 'слушать вместе'}
-              title={listening ? 'выключить музыку' : 'слушать вместе'}
+              aria-label={listening ? STRINGS.listenOff : STRINGS.listenOn}
+              title={listening ? STRINGS.listenOff : STRINGS.listenOn}
             >
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                 <path d="M11 5 6 9H2v6h4l5 4V5z" />
@@ -728,5 +999,6 @@ export default function App() {
         {toastMessage}
       </div>
     </div>
+    </CalmContext.Provider>
   )
 }
