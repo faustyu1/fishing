@@ -267,6 +267,8 @@ a, .social {
   text-align: left;
   /* Unfolds after the social buttons, so the card grows instead of sitting half empty. */
   display: grid;
+  /* minmax(0, 1fr): long no-wrap titles must not widen the block past the card. */
+  grid-template-columns: minmax(0, 1fr);
   grid-template-rows: 0fr;
   opacity: 0;
   animation: unfold 0.8s cubic-bezier(0.2, 0.8, 0.2, 1) 0.45s forwards;
