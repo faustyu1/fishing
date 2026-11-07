@@ -213,7 +213,7 @@ function Scramble({ text, className }: { text: string; className?: string }) {
     const now = performance.now()
     const old = prev.current
     until.current = Array.from(text, (c, i) =>
-      all || old[i] !== c ? now + 120 + i * 22 + Math.random() * 260 : (until.current[i] ?? 0),
+      all || old[i] !== c ? now + 300 + i * 50 + Math.random() * 600 : (until.current[i] ?? 0),
     )
     prev.current = text
   }, [text])
@@ -227,12 +227,12 @@ function Scramble({ text, className }: { text: string; className?: string }) {
       // Rare idle flicker of a single character.
       if (Math.random() < 0.04 && chars.length) {
         const i = Math.floor(Math.random() * chars.length)
-        until.current[i] = Math.max(until.current[i] ?? 0, now + 90)
+        until.current[i] = Math.max(until.current[i] ?? 0, now + 300)
       }
       let out = ''
       for (let i = 0; i < chars.length; i++) out += now < (until.current[i] ?? 0) ? noiseFor(chars[i]) : chars[i]
       if (el.current && el.current.textContent !== out) el.current.textContent = out
-    }, 45)
+    }, 100)
     return () => clearInterval(iv)
   }, [text, scramble, calm])
 
